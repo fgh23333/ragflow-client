@@ -30,22 +30,21 @@ const activeIndex = computed(() => route.path);
 }
 
 #app {
-  height: 100%;
-  width: 100%;
+  height: 100vh;
+  width: 100vw;
   padding: 0;
+  margin: 0;
 }
 
 body {
-  height: 100vh;
-  width: 100vw;
   margin: 0;
   font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
 }
 
 .main-container {
-  height: 100%;
-  width: 100%;
+  height: 100vh;
+  width: 100vw;
 }
 
 .header {

@@ -19,10 +19,10 @@
                 :disabled="selectedFiles.length === 0">批量设置元数据</el-button>
             <el-button type="warning" :icon="Reading" @click="handleRunParsing"
                 :disabled="selectedFiles.length === 0">批量解析</el-button>
+            <el-button type="danger" :icon="Delete" @click="handleDeleteFiles"
+                :disabled="selectedFiles.length === 0">批量删除</el-button>
             <el-button :icon="Refresh" @click="fetchData" circle />
         </div>
-        <el-button type="danger" :icon="Delete" @click="handleDeleteFiles"
-            :disabled="selectedFiles.length === 0">批量删除</el-button>
         <el-table :data="store.files" @selection-change="handleSelectionChange" :row-key="'id'" style="width: 100%">
             <el-table-column type="selection" width="55" />
             <el-table-column prop="name" label="文件名" show-overflow-tooltip />
@@ -33,13 +33,11 @@
                     </el-tag>
                 </template>
             </el-table-column>
-            <el-table-column prop="chunk_num" label="块数量" width="100" />
+            <el-table-column prop="chunk_count" label="块数量" width="100" />
             <el-table-column prop="create_time" label="上传时间" width="180" />
-            <el-table-column label="元数据">
+            <el-table-column label="操作" width="100">
                 <template #default="scope">
-                    <pre v-if="scope.row.meta_fields && Object.keys(scope.row.meta_fields).length > 0"
-                        class="meta-pre">{{ JSON.stringify(scope.row.meta_fields, null, 2) }}</pre>
-                    <span v-else style="color: #909399;">无</span>
+                    <el-button link type="primary" @click="openDetailDialog(scope.row)">详情</el-button>
                 </template>
             </el-table-column>
         </el-table>
@@ -61,6 +59,30 @@
                 <el-button type="primary" @click="handleSetMetadata">确认更新</el-button>
             </template>
         </el-dialog>
+
+        <el-dialog v-model="detailDialogVisible" title="文件详情" width="600px">
+            <div v-if="selectedFileForDetail">
+                <el-descriptions :column="1" border>
+                    <el-descriptions-item label="文件名">{{ selectedFileForDetail.name }}</el-descriptions-item>
+                    <el-descriptions-item label="状态">
+                        <el-tag :type="formatStatus(selectedFileForDetail.run).type" effect="dark">
+                            {{ formatStatus(selectedFileForDetail.run).text }}
+                        </el-tag>
+                    </el-descriptions-item>
+                    <el-descriptions-item label="块数量">{{ selectedFileForDetail.chunk_count }}</el-descriptions-item>
+                    <el-descriptions-item label="上传时间">{{ selectedFileForDetail.create_time }}</el-descriptions-item>
+                    <el-descriptions-item label="文件大小">{{ selectedFileForDetail.size }} bytes</el-descriptions-item>
+                    <el-descriptions-item label="ID">{{ selectedFileForDetail.id }}</el-descriptions-item>
+                </el-descriptions>
+                <h4 class="detail-subtitle">元数据</h4>
+                <pre v-if="selectedFileForDetail.meta_fields && Object.keys(selectedFileForDetail.meta_fields).length > 0"
+                    class="meta-pre">{{ JSON.stringify(selectedFileForDetail.meta_fields, null, 2) }}</pre>
+                <span v-else style="color: #909399;">无元数据</span>
+            </div>
+            <template #footer>
+                <el-button type="primary" @click="detailDialogVisible = false">关闭</el-button>
+            </template>
+        </el-dialog>
     </div>
 </template>
 
@@ -78,6 +100,8 @@ const router = useRouter();
 
 const selectedFiles = ref([]);
 const metadataDialogVisible = ref(false);
+const detailDialogVisible = ref(false);
+const selectedFileForDetail = ref(null);
 const metadataForm = reactive({ jsonString: '' });
 const pagination = reactive({ currentPage: 1, pageSize: 30 });
 
@@ -98,8 +122,10 @@ const readFileAsText = (file) => new Promise((resolve, reject) => {
     reader.readAsText(file);
 });
 
-const handleUploadRequest = async ({ file: singleFile, files: multipleFiles }) => {
-    const fileList = multipleFiles || [singleFile];
+let batchPromise = null;
+let batchFiles = [];
+
+const processFiles = async (fileList) => {
     store.loading = true;
     ElMessage.info(`开始处理 ${fileList.length} 个选定文件...`);
     const dataFiles = [];
@@ -108,16 +134,12 @@ const handleUploadRequest = async ({ file: singleFile, files: multipleFiles }) =
     try {
         for (const file of fileList) {
             const actualFile = file.raw || file; // el-upload might wrap the file
-            console.log(actualFile);
-            
             if (actualFile.name.toLowerCase().endsWith('.json')) {
                 const baseName = actualFile.name.slice(0, actualFile.name.lastIndexOf('.'));
                 const content = await readFileAsText(actualFile);
                 metadataMap.set(baseName, JSON.parse(content));
             } else {
                 dataFiles.push(actualFile);
-                console.log(dataFiles);
-                
             }
         }
     } catch (e) {
@@ -132,38 +154,61 @@ const handleUploadRequest = async ({ file: singleFile, files: multipleFiles }) =
         return;
     }
 
-    const formData = new FormData();
-    dataFiles.forEach(f => formData.append('file', f));
-    let uploadedFilesInfo;
-    try {
-        ElMessage.info(`正在上传 ${dataFiles.length} 个数据文件...`);
-        const res = await api.uploadDocuments(props.id, formData);
-        uploadedFilesInfo = res.data.data;
-        if (!Array.isArray(uploadedFilesInfo)) throw new Error("API未返回预期的文件信息数组");
-        ElMessage.success('数据文件上传成功！开始匹配并更新元数据...');
-    } catch (error) {
-        ElMessage.error(`数据文件上传失败: ${error.message}`);
-        store.loading = false;
-        return;
-    }
+    let successCount = 0;
+    let metadataUpdateCount = 0;
+    let errorCount = 0;
 
-    const updatePromises = uploadedFilesInfo.map(docInfo => {
-        const baseName = docInfo.name.slice(0, docInfo.name.lastIndexOf('.'));
-        if (metadataMap.has(baseName)) {
-            const payload = { meta_fields: metadataMap.get(baseName) };
-            return api.updateDocument(props.id, docInfo.id, payload);
-        }
-        return Promise.resolve();
-    }).filter(p => p !== Promise.resolve());
+    for (const file of dataFiles) {
+        const formData = new FormData();
+        formData.append('file', file);
 
-    if (updatePromises.length > 0) {
         try {
-            await Promise.all(updatePromises);
-            ElMessage.success(`${updatePromises.length} 个文件的元数据已成功更新！`);
-        } catch (error) { ElMessage.warning('部分文件的元数据更新失败。'); }
+            ElMessage.info(`正在上传 ${file.name}...`);
+            const res = await api.uploadDocuments(props.id, formData);
+            const uploadedDocInfo = res.data.data[0];
+            if (!uploadedDocInfo || !uploadedDocInfo.id) {
+                throw new Error(`文件 ${file.name} 上传后未返回有效的ID。`);
+            }
+            successCount++;
+            ElMessage.success(`${file.name} 上传成功。`);
+
+            const baseName = file.name.slice(0, file.name.lastIndexOf('.'));
+            if (metadataMap.has(baseName)) {
+                ElMessage.info(`为 ${file.name} 更新元数据...`);
+                const payload = { meta_fields: metadataMap.get(baseName) };
+                await api.updateDocument(props.id, uploadedDocInfo.id, payload);
+                metadataUpdateCount++;
+                ElMessage.success(`元数据为 ${file.name} 更新成功。`);
+            }
+        } catch (error) {
+            errorCount++;
+            ElMessage.error(`${file.name} 处理失败: ${error.message}`);
+        }
     }
+
+    ElMessage.info(`处理完成。成功: ${successCount}, 失败: ${errorCount}, 元数据更新: ${metadataUpdateCount}。`);
     store.loading = false;
     fetchData();
+}
+
+const handleUploadRequest = ({ file }) => {
+    if (!batchPromise) {
+        batchPromise = new Promise((resolve) => {
+            Promise.resolve().then(() => {
+                const filesToProcess = [...batchFiles];
+                batchFiles = [];
+                batchPromise = null;
+                resolve(filesToProcess);
+            });
+        });
+        batchPromise.then(processFiles);
+    }
+    batchFiles.push(file);
+};
+
+const openDetailDialog = (file) => {
+    selectedFileForDetail.value = file;
+    detailDialogVisible.value = true;
 };
 
 const openMetadataDialog = () => {
@@ -258,5 +303,12 @@ const formatStatus = (run) => {
     white-space: pre-wrap;
     word-break: break-all;
     margin: 0;
+}
+
+.detail-subtitle {
+    margin-top: 20px;
+    margin-bottom: 10px;
+    font-size: 16px;
+    font-weight: 600;
 }
 </style>
