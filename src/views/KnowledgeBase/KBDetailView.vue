@@ -122,8 +122,8 @@ const readFileAsText = (file) => new Promise((resolve, reject) => {
     reader.readAsText(file);
 });
 
-let batchPromise = null;
-let batchFiles = [];
+let fileBatch = [];
+let uploadTimeout = null;
 
 const processFiles = async (fileList) => {
     store.loading = true;
@@ -191,19 +191,14 @@ const processFiles = async (fileList) => {
     fetchData();
 }
 
-const handleUploadRequest = ({ file }) => {
-    if (!batchPromise) {
-        batchPromise = new Promise((resolve) => {
-            Promise.resolve().then(() => {
-                const filesToProcess = [...batchFiles];
-                batchFiles = [];
-                batchPromise = null;
-                resolve(filesToProcess);
-            });
-        });
-        batchPromise.then(processFiles);
-    }
-    batchFiles.push(file);
+const handleUploadRequest = async ({ file }) => {
+    fileBatch.push(file);
+    if (uploadTimeout) clearTimeout(uploadTimeout);
+    uploadTimeout = setTimeout(() => {
+        const filesToProcess = [...fileBatch];
+        fileBatch.length = 0;
+        processFiles(filesToProcess);
+    }, 300);
 };
 
 const openDetailDialog = (file) => {
@@ -240,6 +235,19 @@ const handleRunParsing = () => {
         confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning',
     }).then(() => store.runParsingForFiles(props.id, selectedFiles.value.map(f => f.id)))
         .catch(() => ElMessage.info('已取消解析'));
+};
+
+const handleDeleteFiles = () => {
+    if (selectedFiles.value.length === 0) return;
+    ElMessageBox.confirm(`确定要删除选中的 ${selectedFiles.value.length} 个文件吗？此操作不可逆！`, '警告', {
+        confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning',
+    }).then(() => {
+        const docIds = selectedFiles.value.map(file => file.id);
+        console.log('Deleting files with IDs:', docIds);
+        store.deleteDocuments(props.id, docIds);
+    }).catch(() => {
+        ElMessage.info('已取消删除');
+    });
 };
 
 const formatStatus = (run) => {

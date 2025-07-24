@@ -76,8 +76,11 @@ export default {
         return apiClient.put(`/api/v1/datasets/${datasetId}/documents/${documentId}`, data);
     },
 
-    deleteDocument(datasetId, documentId) {
-        return apiClient.delete(`/api/v1/datasets/${datasetId}/documents/${documentId}`);
+    deleteDocuments(datasetId, docIds) {
+        return apiClient.delete(`/api/v1/datasets/${datasetId}/documents`, {
+            headers: { 'Content-Type': 'application/json' },
+            data: { ids: docIds }
+        });
     },
 
     // === Parsing (Chunk) API ===

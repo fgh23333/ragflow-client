@@ -121,6 +121,22 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     }
   }
 
+  const deleteDocuments = async (kbId, docIds) => {
+    loading.value = true;
+    ElMessage.info(`开始为 ${docIds.length} 个文件批量删除...`);
+    try {
+      const res = await api.deleteDocuments(kbId, docIds);
+      console.log(res);
+      
+      ElMessage.success('批量删除成功!');
+      await fetchFiles(kbId); // Refresh the file list
+    } catch (error) {
+      ElNotification({ title: '错误', message: `批量删除时发生错误: ${error.message}`, type: 'error' });
+    } finally {
+      loading.value = false;
+    }
+  }
+
   return {
     knowledgeBases,
     files,
@@ -131,6 +147,7 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     deleteKnowledgeBases,
     fetchFiles,
     updateFilesInStore,
-    runParsingForFiles
+    runParsingForFiles,
+    deleteDocuments
   };
 });
