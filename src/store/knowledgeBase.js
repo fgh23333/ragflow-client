@@ -93,9 +93,37 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     }
   }
 
-  async function runParsingForFiles(kbId, document_ids) {
+  async function runParsingForFiles(kbId, document_ids = [], parseAll = false) {
+    let idsToParse = document_ids;
+
+    if (parseAll) {
+      loading.value = true;
+      try {
+        // Fetch all document IDs if parseAll is true
+        // Assuming a very large pageSize to get all documents.
+        // A dedicated API endpoint for getting all IDs would be more efficient.
+        const res = await api.getDocuments(kbId, 1, 999999); 
+        if (res.data && Array.isArray(res.data.data.docs)) {
+          idsToParse = res.data.data.docs.map(doc => doc.id);
+        } else {
+          idsToParse = [];
+        }
+      } catch (error) {
+        ElNotification({ title: '错误', message: `获取所有文件ID失败: ${error.message}`, type: 'error' });
+        loading.value = false;
+        return;
+      } finally {
+        loading.value = false;
+      }
+    }
+
+    if (idsToParse.length === 0) {
+      ElMessage.info('没有文件需要解析。');
+      return;
+    }
+
     // 1. **立即在前端更新状态**，提供即时反馈
-    const docIdSet = new Set(document_ids);
+    const docIdSet = new Set(idsToParse);
     files.value = files.value.map(file => {
       if (docIdSet.has(file.id)) {
         return { ...file, run: 'RUNNING' }; // Use a more descriptive status
@@ -103,11 +131,11 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
       return file;
     });
 
-    ElMessage.info('已发送批量解析任务，文件状态更新为“解析中”...');
+    ElMessage.info(`已发送 ${idsToParse.length} 个文件的批量解析任务，文件状态更新为“解析中”...`);
 
     // 2. **异步向后端发送请求**
     try {
-      await api.runParsing(kbId, document_ids);
+      await api.runParsing(kbId, idsToParse);
       ElMessage.success('解析任务已成功提交到后端处理。');
       // 3. **延迟后从服务器刷新**，获取最终状态
       setTimeout(() => {

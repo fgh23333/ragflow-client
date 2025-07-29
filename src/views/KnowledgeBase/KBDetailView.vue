@@ -19,6 +19,7 @@
                 :disabled="selectedFiles.length === 0">批量设置元数据</el-button>
             <el-button type="warning" :icon="Reading" @click="handleRunParsing"
                 :disabled="selectedFiles.length === 0">批量解析</el-button>
+            <el-button type="info" :icon="Reading" @click="handleRunParsingAll">解析所有文件</el-button>
             <el-button type="danger" :icon="Delete" @click="handleDeleteFiles"
                 :disabled="selectedFiles.length === 0">批量删除</el-button>
             <el-button :icon="Refresh" @click="fetchData" circle />
@@ -235,6 +236,13 @@ const handleRunParsing = () => {
         confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning',
     }).then(() => store.runParsingForFiles(props.id, selectedFiles.value.map(f => f.id)))
         .catch(() => ElMessage.info('已取消解析'));
+};
+
+const handleRunParsingAll = () => {
+    ElMessageBox.confirm(`确定要为知识库内所有文件创建解析任务吗？`, '确认解析所有文件', {
+        confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning',
+    }).then(() => store.runParsingForFiles(props.id, [], true))
+        .catch(() => ElMessage.info('已取消解析所有文件'));
 };
 
 const handleDeleteFiles = () => {
