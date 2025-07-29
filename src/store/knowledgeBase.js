@@ -35,7 +35,7 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
       const res = await api.getDocuments(kbId, page, pageSize);
       if (res.data && Array.isArray(res.data.data.docs)) {
         files.value = res.data.data.docs;
-        totalFiles.value = res.data.total || 0;
+        totalFiles.value = res.data.data.total || 0;
       } else {
         files.value = [];
         totalFiles.value = 0;
