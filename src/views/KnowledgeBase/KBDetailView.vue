@@ -23,6 +23,9 @@
             <el-button type="danger" :icon="Delete" @click="handleDeleteFiles"
                 :disabled="selectedFiles.length === 0">批量删除</el-button>
             <el-button :icon="Refresh" @click="fetchData" circle />
+            <div class="flex-grow" />
+            <el-input v-model="store.searchQuery" placeholder="搜索文件名" clearable style="width: 200px; margin-right: 10px;" />
+            <span class="file-count-display">共 {{ store.totalFiles }} 个文件</span>
         </div>
         <el-table :data="store.files" @selection-change="handleSelectionChange" :row-key="'id'" style="width: 100%">
             <el-table-column type="selection" width="55" />
@@ -88,7 +91,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useKnowledgeBaseStore } from '@/store/knowledgeBase';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -106,15 +109,21 @@ const selectedFileForDetail = ref(null);
 const metadataForm = reactive({ jsonString: '' });
 const pagination = reactive({ currentPage: 1, pageSize: 30 });
 
-onMounted(() => {
-    if (store.knowledgeBases.length === 0) store.fetchKnowledgeBases();
-    fetchData();
+onMounted(async () => {
+    if (store.knowledgeBases.length === 0) await store.fetchKnowledgeBases();
+    await store.fetchAllFiles(props.id);
+    store.updateDisplayedFiles(pagination.currentPage, pagination.pageSize);
 });
 
-const fetchData = () => { store.fetchFiles(props.id, pagination.currentPage, pagination.pageSize); };
+watch(() => store.searchQuery, () => {
+    pagination.currentPage = 1; // Reset to first page on search
+    store.updateDisplayedFiles(pagination.currentPage, pagination.pageSize);
+});
+
+const fetchData = () => { store.updateDisplayedFiles(pagination.currentPage, pagination.pageSize); };
 const goBack = () => router.back();
 const handleSelectionChange = (val) => { selectedFiles.value = val; };
-const handlePageChange = (page) => { pagination.currentPage = page; fetchData(); };
+const handlePageChange = (page) => { pagination.currentPage = page; store.updateDisplayedFiles(page, pagination.pageSize); };
 
 const readFileAsText = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -189,7 +198,8 @@ const processFiles = async (fileList) => {
 
     ElMessage.info(`处理完成。成功: ${successCount}, 失败: ${errorCount}, 元数据更新: ${metadataUpdateCount}。`);
     store.loading = false;
-    fetchData();
+    await store.fetchAllFiles(props.id); // Re-fetch all files from backend
+    store.updateDisplayedFiles(pagination.currentPage, pagination.pageSize); // Update displayed files
 }
 
 const handleUploadRequest = async ({ file }) => {
@@ -288,6 +298,17 @@ const formatStatus = (run) => {
     padding-bottom: 20px;
     display: flex;
     gap: 10px;
+    align-items: center; /* Align items vertically in the middle */
+}
+
+.flex-grow {
+    flex-grow: 1;
+}
+
+.file-count-display {
+    font-size: 14px;
+    color: #606266;
+    white-space: nowrap; /* Prevent text from wrapping */
 }
 
 .el-divider {

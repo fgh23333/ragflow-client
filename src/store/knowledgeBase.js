@@ -6,9 +6,11 @@ import api from '@/api';
 
 export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
   const knowledgeBases = ref([]);
-  const files = ref([]);
-  const totalFiles = ref(0);
+  const allFiles = ref([]); // Stores all files fetched from backend
+  const files = ref([]); // Stores currently displayed files (filtered and paginated)
+  const totalFiles = ref(0); // Total count of filtered files
   const loading = ref(false);
+  const searchQuery = ref(''); // Search query for frontend filtering
 
   // === 数据获取 Actions ===
   async function fetchKnowledgeBases() {
@@ -29,25 +31,46 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     }
   }
 
-  async function fetchFiles(kbId, page = 1, pageSize = 30) {
+  // Fetches all files for a given knowledge base
+  async function fetchAllFiles(kbId) {
     loading.value = true;
     try {
-      const res = await api.getDocuments(kbId, page, pageSize);
+      // Fetch all documents (assuming a large enough pageSize for now)
+      // In a real-world scenario with many files, this might need
+      // to be an iterative fetch or a dedicated backend endpoint.
+      const res = await api.getDocuments(kbId, 1, 999999); 
       if (res.data && Array.isArray(res.data.data.docs)) {
-        files.value = res.data.data.docs;
-        totalFiles.value = res.data.data.total || 0;
+        allFiles.value = res.data.data.docs;
       } else {
-        files.value = [];
-        totalFiles.value = 0;
+        allFiles.value = [];
       }
     } catch (error) {
-      console.error(`获取文件列表失败 for kb ${kbId}:`, error);
-      files.value = [];
-      totalFiles.value = 0;
-      ElNotification({ title: '错误', message: '获取文件列表失败', type: 'error' });
+      console.error(`获取所有文件失败 for kb ${kbId}:`, error);
+      allFiles.value = [];
+      ElNotification({ title: '错误', message: '获取所有文件失败', type: 'error' });
     } finally {
       loading.value = false;
     }
+  }
+
+  // Updates the displayed files based on search query and pagination
+  function updateDisplayedFiles(page = 1, pageSize = 30) {
+    let currentFiles = allFiles.value;
+
+    // Apply search filter
+    if (searchQuery.value) {
+      const lowerCaseQuery = searchQuery.value.toLowerCase();
+      currentFiles = currentFiles.filter(file =>
+        file.name.toLowerCase().includes(lowerCaseQuery)
+      );
+    }
+
+    totalFiles.value = currentFiles.length;
+
+    // Apply pagination
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    files.value = currentFiles.slice(startIndex, endIndex);
   }
 
   // === 知识库操作 Actions ===
@@ -85,7 +108,8 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
       const promises = docIds.map(docId => api.updateDocument(kbId, docId, data));
       await Promise.all(promises);
       ElMessage.success('批量更新信息成功!');
-      await fetchFiles(kbId); // Refresh the file list
+      await fetchAllFiles(kbId); // Refresh all files
+      updateDisplayedFiles(); // Update displayed files after refresh
     } catch (error) {
       ElNotification({ title: '错误', message: `批量更新信息时发生错误: ${error.message}`, type: 'error' });
     } finally {
@@ -100,8 +124,6 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
       loading.value = true;
       try {
         // Fetch all document IDs if parseAll is true
-        // Assuming a very large pageSize to get all documents.
-        // A dedicated API endpoint for getting all IDs would be more efficient.
         const res = await api.getDocuments(kbId, 1, 999999); 
         if (res.data && Array.isArray(res.data.data.docs)) {
           idsToParse = res.data.data.docs.map(doc => doc.id);
@@ -124,12 +146,13 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
 
     // 1. **立即在前端更新状态**，提供即时反馈
     const docIdSet = new Set(idsToParse);
-    files.value = files.value.map(file => {
+    allFiles.value = allFiles.value.map(file => {
       if (docIdSet.has(file.id)) {
         return { ...file, run: 'RUNNING' }; // Use a more descriptive status
       }
       return file;
     });
+    updateDisplayedFiles(); // Update displayed files to reflect status change
 
     ElMessage.info(`已发送 ${idsToParse.length} 个文件的批量解析任务，文件状态更新为“解析中”...`);
 
@@ -138,14 +161,16 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
       await api.runParsing(kbId, idsToParse);
       ElMessage.success('解析任务已成功提交到后端处理。');
       // 3. **延迟后从服务器刷新**，获取最终状态
-      setTimeout(() => {
+      setTimeout(async () => {
         ElMessage.info('正在刷新文件状态...');
-        fetchFiles(kbId);
+        await fetchAllFiles(kbId);
+        updateDisplayedFiles();
       }, 5000); // 延迟5秒刷新
     } catch (error) {
       ElNotification({ title: '错误', message: `发送解析任务失败: ${error.message}`, type: 'error' });
       // 如果失败，可以把状态再改回去
-      fetchFiles(kbId);
+      await fetchAllFiles(kbId);
+      updateDisplayedFiles();
     }
   }
 
@@ -157,7 +182,8 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
       console.log(res);
       
       ElMessage.success('批量删除成功!');
-      await fetchFiles(kbId); // Refresh the file list
+      await fetchAllFiles(kbId); // Refresh all files
+      updateDisplayedFiles(); // Update displayed files after refresh
     } catch (error) {
       ElNotification({ title: '错误', message: `批量删除时发生错误: ${error.message}`, type: 'error' });
     } finally {
@@ -170,10 +196,12 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     files,
     totalFiles,
     loading,
+    searchQuery, // Expose searchQuery
     fetchKnowledgeBases,
     createKnowledgeBase,
     deleteKnowledgeBases,
-    fetchFiles,
+    fetchAllFiles, // Expose fetchAllFiles
+    updateDisplayedFiles, // Expose updateDisplayedFiles
     updateFilesInStore,
     runParsingForFiles,
     deleteDocuments
