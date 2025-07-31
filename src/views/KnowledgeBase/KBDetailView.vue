@@ -38,7 +38,11 @@
                 </template>
             </el-table-column>
             <el-table-column prop="chunk_count" label="块数量" width="100" />
-            <el-table-column prop="create_time" label="上传时间" width="180" />
+            <el-table-column label="上传时间" width="180">
+                <template #default="scope">
+                    {{ formatTimestamp(scope.row.create_time) }}
+                </template>
+            </el-table-column>
             <el-table-column label="操作" width="100">
                 <template #default="scope">
                     <el-button link type="primary" @click="openDetailDialog(scope.row)">详情</el-button>
@@ -71,11 +75,11 @@
                     <el-descriptions-item label="状态">
                         <el-tag :type="formatStatus(selectedFileForDetail.run).type" effect="dark">
                             {{ formatStatus(selectedFileForDetail.run).text }}
-                        </el-tag>
-                    </el-descriptions-item>
-                    <el-descriptions-item label="块数量">{{ selectedFileForDetail.chunk_count }}</el-descriptions-item>
-                    <el-descriptions-item label="上传时间">{{ selectedFileForDetail.create_time }}</el-descriptions-item>
-                    <el-descriptions-item label="文件大小">{{ selectedFileForDetail.size }} bytes</el-descriptions-item>
+                    </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="块数量">{{ selectedFileForDetail.chunk_count }}</el-descriptions-item>
+                <el-descriptions-item label="上传时间">{{ formatTimestamp(selectedFileForDetail.create_time) }}</el-descriptions-item>
+                <el-descriptions-item label="文件大小">{{ selectedFileForDetail.size }} bytes</el-descriptions-item>
                     <el-descriptions-item label="ID">{{ selectedFileForDetail.id }}</el-descriptions-item>
                 </el-descriptions>
                 <h4 class="detail-subtitle">元数据</h4>
@@ -277,6 +281,19 @@ const formatStatus = (run) => {
         case 'FAIL': return { text: '失败', type: 'danger' };
         default: return { text: '未知', type: 'info' };
     }
+};
+
+const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '';
+    // Assuming timestamp is in milliseconds. If it's in seconds, multiply by 1000.
+    const date = new Date(timestamp); 
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 </script>
 
