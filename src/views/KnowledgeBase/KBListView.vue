@@ -21,7 +21,11 @@
                     {{ scope.row.doc_num }} / {{ scope.row.chunk_num }}
                 </template>
             </el-table-column>
-            <el-table-column prop="create_time" label="创建时间" width="180" />
+            <el-table-column label="创建时间" width="180">
+                <template #default="scope">
+                    {{ formatTimestamp(scope.row.create_time) }}
+                </template>
+            </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
                 <template #default="scope">
                     <el-button size="small" type="danger" @click="handleSingleDelete(scope.row)">删除</el-button>
@@ -97,6 +101,19 @@ const confirmDelete = (ids) => {
 
 const handleBatchDelete = () => { confirmDelete(selectedKbs.value.map(kb => kb.id)); };
 const handleSingleDelete = (row) => { confirmDelete([row.id]); };
+
+const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '';
+    // Assuming timestamp is in milliseconds. If it's in seconds, multiply by 1000.
+    const date = new Date(timestamp); 
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+};
 </script>
 
 <style scoped>
